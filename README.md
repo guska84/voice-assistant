@@ -9,6 +9,9 @@ A lightweight, self-hosted voice assistant with support for customizable speech-
 - 🔊 **Voice Output** - Text-to-speech using system TTS or custom API
 - 🔄 **Continuous Mode** - Keep-alive conversational mode
 - ⚙️ **Adjustable Detection** - Fine-tune speech detection thresholds
+- 🎯 **System Prompts** - Guide AI behavior for concise, conversational responses
+- ⏱️ **Configurable Timeout** - Adjust request timeout for long responses (30-300 seconds)
+- 📑 **Tabbed Interface** - Clean main interface with organized settings tab
 - 🏠 **Self-Hosted** - Full support for local/offline operation
 - 🪶 **Lightweight** - Simple GUI, minimal dependencies
 - 🔒 **Privacy-First** - Run everything locally if desired
@@ -418,3 +421,4 @@ Potential future features:
 - **API keys secure** - Stored locally, never transmitted except to your configured endpoints
 
 When using cloud APIs (Google Speech Recognition, OpenAI, etc.), their respective privacy policies apply.
+
