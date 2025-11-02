@@ -191,4 +191,4 @@ For issues or questions:
 
 ## License
 
-Free to use and modify for personal or commercial use.
+Free to use under GNU GPLv3
