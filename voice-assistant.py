@@ -12,7 +12,7 @@ class VoiceAssistant:
     def __init__(self, root):
         self.root = root
         self.root.title("Voice Assistant")
-        self.root.geometry("650x750")
+        self.root.geometry("650x600")
         
         # Initialize speech components
         self.recognizer = sr.Recognizer()
@@ -49,6 +49,8 @@ class VoiceAssistant:
                 self.tts_api_url = config.get('tts_api_url', 'http://127.0.0.1:8000/v1/audio/speech')
                 self.tts_api_key = config.get('tts_api_key', 'not-needed')
                 self.tts_voice = config.get('tts_voice', 'alloy')
+                self.request_timeout = config.get('request_timeout', 120)
+                self.system_prompt = config.get('system_prompt', 'You are a helpful voice assistant. Keep responses concise and conversational, as they will be read aloud. Avoid long explanations unless specifically asked.')
         else:
             self.api_url = 'http://127.0.0.1:1234/v1/chat/completions'
             self.api_key = 'not-needed'
@@ -63,6 +65,8 @@ class VoiceAssistant:
             self.tts_api_url = 'http://127.0.0.1:8000/v1/audio/speech'
             self.tts_api_key = 'not-needed'
             self.tts_voice = 'alloy'
+            self.request_timeout = 120
+            self.system_prompt = 'You are a helpful voice assistant. Keep responses concise and conversational, as they will be read aloud. Avoid long explanations unless specifically asked.'
     
     def save_config(self):
         """Save API configuration to file"""
@@ -79,7 +83,9 @@ class VoiceAssistant:
             'use_custom_tts': self.use_custom_tts_var.get(),
             'tts_api_url': self.tts_api_url_entry.get(),
             'tts_api_key': self.tts_api_key_entry.get(),
-            'tts_voice': self.tts_voice_entry.get()
+            'tts_voice': self.tts_voice_entry.get(),
+            'request_timeout': int(self.timeout_scale.get()),
+            'system_prompt': self.system_prompt_text.get("1.0", "end-1c")
         }
         with open(self.config_file, 'w') as f:
             json.dump(config, f)
@@ -96,6 +102,8 @@ class VoiceAssistant:
         self.tts_api_url = config['tts_api_url']
         self.tts_api_key = config['tts_api_key']
         self.tts_voice = config['tts_voice']
+        self.request_timeout = config['request_timeout']
+        self.system_prompt = config['system_prompt']
         
         # Update recognizer settings
         self.recognizer.pause_threshold = self.pause_threshold
@@ -107,10 +115,76 @@ class VoiceAssistant:
     
     def setup_ui(self):
         """Create the user interface"""
-        # Make window larger to accommodate new settings
-        self.root.geometry("650x750")
+        # Create notebook (tabbed interface)
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        # Create tabs
+        main_tab = ttk.Frame(notebook)
+        settings_tab = ttk.Frame(notebook)
+        
+        notebook.add(main_tab, text="  Voice Assistant  ")
+        notebook.add(settings_tab, text="  Settings  ")
+        
+        # Setup main tab
+        self.setup_main_tab(main_tab)
+        
+        # Setup settings tab
+        self.setup_settings_tab(settings_tab)
+    
+    def setup_main_tab(self, parent):
+        """Setup the main voice assistant tab"""
+        # Control Frame
+        control_frame = ttk.Frame(parent, padding=10)
+        control_frame.pack(fill="x", padx=10, pady=10)
+        
+        self.listen_button = ttk.Button(control_frame, text="🎤 Listen Once", command=self.listen_once)
+        self.listen_button.pack(side="left", padx=5)
+        
+        self.continuous_button = ttk.Button(control_frame, text="🔄 Continuous Mode", command=self.toggle_continuous)
+        self.continuous_button.pack(side="left", padx=5)
+        
+        self.stop_button = ttk.Button(control_frame, text="⏹ Stop Speaking", command=self.stop_speaking, state="disabled")
+        self.stop_button.pack(side="left", padx=5)
+        
+        # Status
+        self.status_label = ttk.Label(control_frame, text="Ready", foreground="black")
+        self.status_label.pack(side="left", padx=20)
+        
+        # Conversation Display
+        conv_frame = ttk.LabelFrame(parent, text="Conversation", padding=10)
+        conv_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        self.conversation_text = scrolledtext.ScrolledText(conv_frame, wrap=tk.WORD)
+        self.conversation_text.pack(fill="both", expand=True)
+        self.conversation_text.tag_config("user", foreground="blue")
+        self.conversation_text.tag_config("assistant", foreground="green")
+    
+    def setup_settings_tab(self, parent):
+        """Setup the settings tab with scrollable content"""
+        # Create canvas and scrollbar for scrollable settings
+        canvas = tk.Canvas(parent)
+        scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Enable mouse wheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
         # Config Frame
-        config_frame = ttk.LabelFrame(self.root, text="API Configuration", padding=10)
+        config_frame = ttk.LabelFrame(scrollable_frame, text="API Configuration", padding=10)
         config_frame.pack(fill="x", padx=10, pady=5)
         
         ttk.Label(config_frame, text="API URL:").grid(row=0, column=0, sticky="w", pady=2)
@@ -128,8 +202,25 @@ class VoiceAssistant:
         self.model_entry.insert(0, self.model)
         self.model_entry.grid(row=2, column=1, pady=2, padx=5)
         
+        # LLM Behavior Settings
+        behavior_frame = ttk.LabelFrame(scrollable_frame, text="LLM Behavior Settings", padding=10)
+        behavior_frame.pack(fill="x", padx=10, pady=5)
+        
+        ttk.Label(behavior_frame, text="Request Timeout:").grid(row=0, column=0, sticky="w", pady=2)
+        self.timeout_scale = tk.Scale(behavior_frame, from_=30, to=300, resolution=10, orient=tk.HORIZONTAL, length=200)
+        self.timeout_scale.set(self.request_timeout)
+        self.timeout_scale.grid(row=0, column=1, pady=2, padx=5)
+        ttk.Label(behavior_frame, text="seconds").grid(row=0, column=2, sticky="w")
+        
+        ttk.Label(behavior_frame, text="System Prompt:").grid(row=1, column=0, sticky="nw", pady=2)
+        self.system_prompt_text = tk.Text(behavior_frame, width=50, height=4, wrap=tk.WORD)
+        self.system_prompt_text.insert("1.0", self.system_prompt)
+        self.system_prompt_text.grid(row=1, column=1, pady=2, padx=5)
+        
+        ttk.Label(behavior_frame, text="(Instructions for the AI on how to respond)", font=('TkDefaultFont', 8, 'italic')).grid(row=2, column=1, sticky="w")
+        
         # Speech-to-Text API Settings
-        stt_frame = ttk.LabelFrame(self.root, text="Speech-to-Text Settings", padding=10)
+        stt_frame = ttk.LabelFrame(scrollable_frame, text="Speech-to-Text Settings", padding=10)
         stt_frame.pack(fill="x", padx=10, pady=5)
         
         self.use_custom_stt_var = tk.BooleanVar(value=self.use_custom_stt)
@@ -147,7 +238,7 @@ class VoiceAssistant:
         self.stt_api_key_entry.grid(row=2, column=1, pady=2, padx=5)
         
         # Text-to-Speech API Settings
-        tts_frame = ttk.LabelFrame(self.root, text="Text-to-Speech Settings", padding=10)
+        tts_frame = ttk.LabelFrame(scrollable_frame, text="Text-to-Speech Settings", padding=10)
         tts_frame.pack(fill="x", padx=10, pady=5)
         
         self.use_custom_tts_var = tk.BooleanVar(value=self.use_custom_tts)
@@ -170,7 +261,7 @@ class VoiceAssistant:
         self.tts_voice_entry.grid(row=3, column=1, pady=2, padx=5)
         
         # Speech Detection Settings
-        speech_frame = ttk.LabelFrame(self.root, text="Speech Detection Settings", padding=10)
+        speech_frame = ttk.LabelFrame(scrollable_frame, text="Speech Detection Settings", padding=10)
         speech_frame.pack(fill="x", padx=10, pady=5)
         
         ttk.Label(speech_frame, text="Pause Threshold (silence after speech):").grid(row=0, column=0, sticky="w", pady=2)
@@ -191,33 +282,10 @@ class VoiceAssistant:
         self.non_speaking_scale.grid(row=2, column=1, pady=2, padx=5)
         ttk.Label(speech_frame, text="seconds").grid(row=2, column=2, sticky="w")
         
-        ttk.Button(speech_frame, text="Save Config", command=self.save_config).grid(row=3, column=1, pady=5)
-        
-        # Control Frame
-        control_frame = ttk.Frame(self.root, padding=10)
-        control_frame.pack(fill="x", padx=10)
-        
-        self.listen_button = ttk.Button(control_frame, text="🎤 Listen Once", command=self.listen_once)
-        self.listen_button.pack(side="left", padx=5)
-        
-        self.continuous_button = ttk.Button(control_frame, text="🔄 Continuous Mode", command=self.toggle_continuous)
-        self.continuous_button.pack(side="left", padx=5)
-        
-        self.stop_button = ttk.Button(control_frame, text="⏹ Stop Speaking", command=self.stop_speaking, state="disabled")
-        self.stop_button.pack(side="left", padx=5)
-        
-        # Status
-        self.status_label = ttk.Label(control_frame, text="Ready", foreground="black")
-        self.status_label.pack(side="left", padx=20)
-        
-        # Conversation Display
-        conv_frame = ttk.LabelFrame(self.root, text="Conversation", padding=10)
-        conv_frame.pack(fill="both", expand=True, padx=10, pady=5)
-        
-        self.conversation_text = scrolledtext.ScrolledText(conv_frame, wrap=tk.WORD, height=15)
-        self.conversation_text.pack(fill="both", expand=True)
-        self.conversation_text.tag_config("user", foreground="blue")
-        self.conversation_text.tag_config("assistant", foreground="green")
+        # Save button at the bottom
+        button_frame = ttk.Frame(scrollable_frame, padding=10)
+        button_frame.pack(fill="x", padx=10, pady=10)
+        ttk.Button(button_frame, text="Save Configuration", command=self.save_config).pack()
         
     def listen_once(self):
         """Listen for a single voice input"""
@@ -353,14 +421,18 @@ class VoiceAssistant:
                 'Authorization': f'Bearer {self.api_key}'
             }
             
+            # Build messages with system prompt if provided
+            messages = []
+            if self.system_prompt.strip():
+                messages.append({'role': 'system', 'content': self.system_prompt})
+            messages.append({'role': 'user', 'content': text})
+            
             data = {
                 'model': self.model,
-                'messages': [
-                    {'role': 'user', 'content': text}
-                ]
+                'messages': messages
             }
             
-            response = requests.post(self.api_url, headers=headers, json=data, timeout=30)
+            response = requests.post(self.api_url, headers=headers, json=data, timeout=self.request_timeout)
             response.raise_for_status()
             
             result = response.json()
